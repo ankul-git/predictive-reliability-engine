@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pre-app
+  labels:
+    app: pre-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pre-app
+  template:
+    metadata:
+      labels:
+        app: pre-app
+    spec:
+      containers:
+        - name: app
+          image: pre-memory-leak
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              memory: "300Mi"
+            requests:
+

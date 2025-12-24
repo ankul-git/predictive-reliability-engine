@@ -1,0 +1,13 @@
+groups:
+- name: pre-app.rules
+  rules:
+  - alert: PreAppMemoryLeakDetected
+    expr: predict_linear(app_memory_objects[10m], 3600) > 500
+    for: 2m
+    labels:
+      severity: warning
+      service: pre-app
+    annotations:
+      summary: "Memory leak detected in pre-app"
+      description: "Memory objects increasing and predicted to cross threshold within 1 hour"
+
