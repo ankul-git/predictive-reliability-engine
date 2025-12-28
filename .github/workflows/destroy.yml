@@ -1,13 +1,13 @@
-name: Terraform Destroy
+name: Terraform Destroy (Stop Billing)
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch:  # Manual trigger from GitHub UI
 
 jobs:
-  terraform-destroy:
+  destroy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v3
 
       - name: Configure AWS Credentials
@@ -19,11 +19,13 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0  # Match your version
 
       - name: Terraform Init
         run: terraform init
-        working-directory: ./terraform  # Adjust to your terraform directory
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
-        working-directory: ./terraform
+        env:
+          TF_VAR_cluster_name: pre-cluster  # Add any other variables
