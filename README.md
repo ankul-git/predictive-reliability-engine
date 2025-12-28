@@ -54,4 +54,3 @@
 5. Request Rate by Endpoint - Traffic analysis
 
 
-![95A1B61A-CE0E-4DD8-9CCA-C1AE96047B97_1_201_a](https://github.com/user-attachments/assets/fec902da-9bb8-4dda-baae-0f0022ae718c)
