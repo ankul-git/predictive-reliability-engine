@@ -1,14 +1,13 @@
-name: Terraform Destroy (Stop All Billing)
+name: 🔥 Destroy All Resources (Stop Billing)
 
 on:
-  workflow_dispatch:  # Manual trigger only - prevents accidental deletion
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
-  destroy:
+  destroy-infrastructure:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v3
 
       - name: Configure AWS Credentials
@@ -21,22 +20,33 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.5.0  # Match your version
+          terraform_version: 1.5.0
 
-      - name: Terraform Init (Pull S3 State)
+      - name: Terraform Init
         run: terraform init
-        working-directory: ./terraform  # Adjust to your terraform directory path
+        working-directory: ./terraform
+
+      - name: Remove Conflicting Resources from State
+        run: |
+          # Remove resources causing conflicts from state
+          terraform state rm 'module.eks.module.kms.aws_kms_alias.this["cluster"]' || true
+          terraform state rm 'module.eks.aws_cloudwatch_log_group.this[0]' || true
+        working-directory: ./terraform
+        continue-on-error: true
+
+      - name: Delete Conflicting AWS Resources Manually
+        run: |
+          # Delete the resources that already exist
+          aws kms delete-alias --alias-name alias/eks/pre-cluster --region us-east-1 || true
+          aws logs delete-log-group --log-group-name /aws/eks/pre-cluster/cluster --region us-east-1 || true
+        continue-on-error: true
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
         working-directory: ./terraform
-        env:
-          TF_VAR_cluster_name: pre-cluster
-          # Add any other required Terraform variables here
 
-      - name: Verify Deletion
+      - name: Verify Complete Deletion
         run: |
-          echo "Checking if cluster is deleted..."
+          echo "Verifying all resources deleted..."
           aws eks list-clusters --region us-east-1
-          echo "Checking if ECR is deleted..."
-          aws ecr describe-repositories --region us-east-1 || echo "ECR deleted successfully"
+          aws ecr describe-repositories --region us-east-1 || echo "✅ ECR deleted"
