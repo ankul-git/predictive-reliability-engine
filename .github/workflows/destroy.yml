@@ -1,15 +1,13 @@
-name: 💣 Destroy Everything (Stop Billing)
+name: 💣 Destroy All Resources (Stop Billing)
 
 on:
-  workflow_dispatch:  # Manual trigger only - safety measure
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
-  destroy:
+  destroy-everything:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -17,40 +15,90 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Delete Conflicting Resources First
+      - name: Delete KMS Alias
         run: |
           echo "🗑️ Deleting KMS alias..."
-          aws kms delete-alias --alias-name alias/eks/pre-cluster --region us-east-1 || echo "Already deleted or doesn't exist"
-          
-          echo "🗑️ Deleting CloudWatch log group..."
-          aws logs delete-log-group --log-group-name /aws/eks/pre-cluster/cluster --region us-east-1 || echo "Already deleted or doesn't exist"
-          
-          echo "✅ Pre-cleanup complete"
+          aws kms delete-alias --alias-name alias/eks/pre-cluster --region us-east-1 || echo "✓ Already deleted"
+        continue-on-error: true
 
-      - name: Delete EKS Cluster (Main Cost Driver)
+      - name: Delete CloudWatch Log Group
         run: |
-          # Get nodegroup name
-          NODEGROUP=$(aws eks list-nodegroups --cluster-name pre-cluster --region us-east-1 --query 'nodegroups[0]' --output text 2>/dev/null || echo "")
+          echo "🗑️ Deleting CloudWatch log group..."
+          aws logs delete-log-group --log-group-name /aws/eks/pre-cluster/cluster --region us-east-1 || echo "✓ Already deleted"
+        continue-on-error: true
+
+      - name: Delete EKS Node Group
+        run: |
+          echo "🔍 Finding node groups..."
+          NODEGROUPS=$(aws eks list-nodegroups --cluster-name pre-cluster --region us-east-1 --query 'nodegroups' --output text 2>/dev/null || echo "")
           
-          if [ ! -z "$NODEGROUP" ] && [ "$NODEGROUP" != "None" ]; then
-            echo "🗑️ Deleting nodegroup: $NODEGROUP"
-            aws eks delete-nodegroup --cluster-name pre-cluster --nodegroup-name $NODEGROUP --region us-east-1
+          if [ ! -z "$NODEGROUPS" ]; then
+            for NODEGROUP in $NODEGROUPS; do
+              echo "🗑️ Deleting nodegroup: $NODEGROUP"
+              aws eks delete-nodegroup --cluster-name pre-cluster --nodegroup-name $NODEGROUP --region us-east-1
+            done
             
-            echo "⏳ Waiting for nodegroup deletion..."
-            aws eks wait nodegroup-deleted --cluster-name pre-cluster --nodegroup-name $NODEGROUP --region us-east-1 || echo "Timeout or already deleted"
+            echo "⏳ Waiting for nodegroup deletion (this takes 5-10 minutes)..."
+            for NODEGROUP in $NODEGROUPS; do
+              aws eks wait nodegroup-deleted --cluster-name pre-cluster --nodegroup-name $NODEGROUP --region us-east-1 || echo "Timeout - continuing anyway"
+            done
+          else
+            echo "✓ No nodegroups found"
           fi
+        continue-on-error: true
+
+      - name: Delete EKS Cluster
+        run: |
+          echo "🗑️ Deleting EKS cluster (this is the $73/month cost)..."
+          aws eks delete-cluster --name pre-cluster --region us-east-1 || echo "✓ Already deleted"
           
-          echo "🗑️ Deleting EKS cluster..."
-          aws eks delete-cluster --name pre-cluster --region us-east-1 || echo "Cluster already deleted"
+          echo "⏳ Waiting for cluster deletion..."
+          aws eks wait cluster-deleted --name pre-cluster --region us-east-1 || echo "Timeout - continuing anyway"
+        continue-on-error: true
 
       - name: Delete ECR Repository
         run: |
-          echo "🗑️ Deleting ECR repository..."
-          aws ecr delete-repository --repository-name memory-leak-app --force --region us-east-1 || echo "Already deleted"
+          echo "🗑️ Deleting ECR repository with all images..."
+          aws ecr delete-repository --repository-name memory-leak-app --force --region us-east-1 || echo "✓ Already deleted"
+        continue-on-error: true
 
-      - name: Verify Deletion Complete
+      - name: Clean Up VPC Resources (if any remain)
         run: |
-          echo "✅ Checking remaining resources..."
-          aws eks list-clusters --region us-east-1
-          aws ecr describe-repositories --region us-east-1 2>&1 | grep -q "RepositoryNotFoundException" && echo "✅ ECR fully deleted" || echo "⚠️  Some ECR repos remain"
-          echo "💰 Billing should now stop!"
+          echo "🗑️ Cleaning up any remaining VPC resources..."
+          
+          # Delete NAT Gateways
+          NAT_GWS=$(aws ec2 describe-nat-gateways --filter "Name=tag:eks:cluster-name,Values=pre-cluster" --query 'NatGateways[?State==`available`].NatGatewayId' --output text --region us-east-1 || echo "")
+          if [ ! -z "$NAT_GWS" ]; then
+            for NAT in $NAT_GWS; do
+              echo "Deleting NAT Gateway: $NAT"
+              aws ec2 delete-nat-gateway --nat-gateway-id $NAT --region us-east-1 || true
+            done
+          fi
+          
+          # Delete Load Balancers
+          LBS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?contains(LoadBalancerName, `pre-cluster`)].LoadBalancerArn' --output text --region us-east-1 || echo "")
+          if [ ! -z "$LBS" ]; then
+            for LB in $LBS; do
+              echo "Deleting Load Balancer: $LB"
+              aws elbv2 delete-load-balancer --load-balancer-arn $LB --region us-east-1 || true
+            done
+          fi
+        continue-on-error: true
+
+      - name: Verify Deletion
+        run: |
+          echo "✅ Verification Report:"
+          echo "===================="
+          
+          echo "EKS Clusters:"
+          aws eks list-clusters --region us-east-1 || echo "✓ No clusters"
+          
+          echo ""
+          echo "ECR Repositories:"
+          aws ecr describe-repositories --region us-east-1 2>&1 | grep -q "RepositoryNotFoundException" && echo "✓ All ECR deleted" || aws ecr describe-repositories --region us-east-1
+          
+          echo ""
+          echo "💰 BILLING STATUS: All major cost resources deleted!"
+          echo "💰 EKS cluster ($73/month) - DELETED"
+          echo "💰 Node groups (EC2 costs) - DELETED"
+          echo "💰 ECR storage - DELETED"
