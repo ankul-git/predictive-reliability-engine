@@ -1,10 +1,10 @@
-name: 🔥 Destroy All Resources (Stop Billing)
+name: 💣 Destroy Everything (Stop Billing)
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch:  # Manual trigger only - safety measure
 
 jobs:
-  destroy-infrastructure:
+  destroy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -17,36 +17,40 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0
-
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ./terraform
-
-      - name: Remove Conflicting Resources from State
+      - name: Delete Conflicting Resources First
         run: |
-          # Remove resources causing conflicts from state
-          terraform state rm 'module.eks.module.kms.aws_kms_alias.this["cluster"]' || true
-          terraform state rm 'module.eks.aws_cloudwatch_log_group.this[0]' || true
-        working-directory: ./terraform
-        continue-on-error: true
+          echo "🗑️ Deleting KMS alias..."
+          aws kms delete-alias --alias-name alias/eks/pre-cluster --region us-east-1 || echo "Already deleted or doesn't exist"
+          
+          echo "🗑️ Deleting CloudWatch log group..."
+          aws logs delete-log-group --log-group-name /aws/eks/pre-cluster/cluster --region us-east-1 || echo "Already deleted or doesn't exist"
+          
+          echo "✅ Pre-cleanup complete"
 
-      - name: Delete Conflicting AWS Resources Manually
+      - name: Delete EKS Cluster (Main Cost Driver)
         run: |
-          # Delete the resources that already exist
-          aws kms delete-alias --alias-name alias/eks/pre-cluster --region us-east-1 || true
-          aws logs delete-log-group --log-group-name /aws/eks/pre-cluster/cluster --region us-east-1 || true
-        continue-on-error: true
+          # Get nodegroup name
+          NODEGROUP=$(aws eks list-nodegroups --cluster-name pre-cluster --region us-east-1 --query 'nodegroups[0]' --output text 2>/dev/null || echo "")
+          
+          if [ ! -z "$NODEGROUP" ] && [ "$NODEGROUP" != "None" ]; then
+            echo "🗑️ Deleting nodegroup: $NODEGROUP"
+            aws eks delete-nodegroup --cluster-name pre-cluster --nodegroup-name $NODEGROUP --region us-east-1
+            
+            echo "⏳ Waiting for nodegroup deletion..."
+            aws eks wait nodegroup-deleted --cluster-name pre-cluster --nodegroup-name $NODEGROUP --region us-east-1 || echo "Timeout or already deleted"
+          fi
+          
+          echo "🗑️ Deleting EKS cluster..."
+          aws eks delete-cluster --name pre-cluster --region us-east-1 || echo "Cluster already deleted"
 
-      - name: Terraform Destroy
-        run: terraform destroy -auto-approve
-        working-directory: ./terraform
-
-      - name: Verify Complete Deletion
+      - name: Delete ECR Repository
         run: |
-          echo "Verifying all resources deleted..."
+          echo "🗑️ Deleting ECR repository..."
+          aws ecr delete-repository --repository-name memory-leak-app --force --region us-east-1 || echo "Already deleted"
+
+      - name: Verify Deletion Complete
+        run: |
+          echo "✅ Checking remaining resources..."
           aws eks list-clusters --region us-east-1
-          aws ecr describe-repositories --region us-east-1 || echo "✅ ECR deleted"
+          aws ecr describe-repositories --region us-east-1 2>&1 | grep -q "RepositoryNotFoundException" && echo "✅ ECR fully deleted" || echo "⚠️  Some ECR repos remain"
+          echo "💰 Billing should now stop!"
