@@ -12,7 +12,47 @@ A production-grade DevOps platform that predicts application failures before the
 AWS EKS | Terraform | Kubernetes | Docker | Prometheus | Grafana | Python | GitHub Actions
 
 ## Live Dashboard
-[Include screenshot from file:127]
+<img width="1352" height="878" alt="Screenshot 2025-12-28 at 2 41 23 PM" src="https://github.com/user-attachments/assets/75ab228d-372f-4ee9-ac6e-ba5459e18831" />
+
 
 ## Architecture
-[Include the architecture diagram I provided earlier]
+┌─────────────────────────────────────────────────────────────────┐
+│                        GitHub Actions (CI/CD)                    │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │ OIDC Auth    │───▶│ Terraform    │───▶│ Deploy App   │      │
+│  │ (AWS STS)    │    │ Apply (EKS)  │    │ to K8s       │      │
+│  └──────────────┘    └──────────────┘    └──────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      AWS EKS Cluster                             │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │                    Application Layer                    │    │
+│  │  ┌──────────────────┐      ┌──────────────────┐       │    │
+│  │  │ Memory Leak App  │──────│ Custom Metrics   │       │    │
+│  │  │ (Python)         │      │ /metrics endpoint│       │    │
+│  │  └──────────────────┘      └──────────────────┘       │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │              Monitoring & Alerting Layer               │    │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │    │
+│  │  │ Prometheus   │─▶│ Grafana      │  │ AlertManager│ │    │
+│  │  │ (Scraping)   │  │ (Dashboard)  │  │ (Routing)   │ │    │
+│  │  └──────────────┘  └──────────────┘  └─────────────┘ │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │            Predictive Reliability Engine               │    │
+│  │  ┌──────────────────────────────────────────────┐     │    │
+│  │  │ Python Service                               │     │    │
+│  │  │ - Queries Prometheus PromQL                  │     │    │
+│  │  │ - Calculates time-to-OOM based on trends     │     │    │
+│  │  │ - Triggers preemptive scaling/alerts         │     │    │
+│  │  └──────────────────────────────────────────────┘     │    │
+│  └────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+
