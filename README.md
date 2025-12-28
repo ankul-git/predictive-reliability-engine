@@ -1,29 +1,18 @@
-# Predictive Reliability Engine 🚀
+# Predictive Reliability Engine
 
-A DevOps/SRE project that demonstrates:
+A production-grade DevOps platform that predicts application failures before they occur using real-time metrics analysis and statistical forecasting.
 
-- Kubernetes-based application deployment
-- Prometheus metrics collection
-- Grafana dashboards
-- Predictive failure estimation based on memory leak patterns
-- End-to-end observability pipeline
+## Key Features
+- **Predictive Analytics**: Forecasts OOM events 30-60 minutes in advance
+- **Auto-scaling Ready**: HPA integration based on predictive thresholds
+- **Zero-Trust Security**: OIDC-based CI/CD with no static credentials
+- **Production Infrastructure**: EKS + Terraform + GitOps workflow
 
-## Components
+## Tech Stack
+AWS EKS | Terraform | Kubernetes | Docker | Prometheus | Grafana | Python | GitHub Actions
 
-- **pre-app**: Python app exposing Prometheus metrics
-- **pre-engine**: Predictive engine querying Prometheus
-- **infra/kubernetes**: Kubernetes manifests
-- **infra/terraform**: (Planned) AWS EKS infrastructure
-- **ci**: (Planned) GitHub Actions CI/CD
-
-## Current Status
-
-✅ Local Kubernetes (kind)  
-✅ Prometheus + Grafana  
-✅ Metrics + prediction logic  
-🚧 AWS EKS + Terraform (Next phase)
+## Live Dashboard
+[Include screenshot from file:127]
 
 ## Architecture
-
-App → Prometheus → Grafana → Predictive Engine
-
+[Include the architecture diagram I provided earlier]
